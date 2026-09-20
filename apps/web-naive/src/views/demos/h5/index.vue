@@ -4,7 +4,7 @@ import { computed } from 'vue';
 import { Page } from '@vben/common-ui';
 import { preferences } from '@vben/preferences';
 
-import { NAlert, NCard } from 'naive-ui';
+import { NAlert } from 'naive-ui';
 
 import { $t } from '#/locales';
 
