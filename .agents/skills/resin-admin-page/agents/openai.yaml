@@ -1,0 +1,7 @@
+interface:
+  display_name: "Resin Admin Page"
+  short_description: "Create localized Naive UI pages for Resin Admin"
+  default_prompt: "Use $resin-admin-page to create a localized basic page in Resin Admin."
+
+policy:
+  allow_implicit_invocation: true

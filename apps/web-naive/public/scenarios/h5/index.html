@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN" data-design-width="750">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"
+    />
+    <title>H5 Viewport</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./viewport.js"></script>
+  </head>
+  <body>
+    <div id="h5-app" v-cloak>
+      <main class="page">
+        <section class="hero">
+          <span class="badge">{{ text.badge }}</span>
+          <h1>{{ text.title }}</h1>
+          <p>{{ text.description }}</p>
+        </section>
+
+        <section class="metrics">
+          <article class="metric">
+            <span>{{ text.viewportWidth }}</span>
+            <strong id="viewport-width">--</strong>
+          </article>
+          <article class="metric">
+            <span>{{ text.rootFontSize }}</span>
+            <strong id="root-font-size">--</strong>
+          </article>
+          <article class="metric">
+            <span>{{ text.pixelRatio }}</span>
+            <strong id="pixel-ratio">--</strong>
+          </article>
+          <article class="metric">
+            <span>{{ text.designWidth }}</span>
+            <strong id="design-width">--</strong>
+          </article>
+        </section>
+
+        <section class="sample-card">
+          <h2>{{ text.sampleTitle }}</h2>
+          <p>{{ text.sampleDescription }}</p>
+          <button type="button">{{ text.sampleAction }}</button>
+        </section>
+      </main>
+    </div>
+    <script src="https://hm-fronted.oss-cn-hangzhou.aliyuncs.com/huanmu/2026/public/js/vue-3.5.41.global.prod.js"></script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
