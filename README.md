@@ -97,20 +97,30 @@ vibecoding/            学习笔记（打包机制、部署细节、路由原理
 
 ## 部署到 Vercel
 
-推上 GitHub 后，在 Vercel 里 Import 这个仓库就行，部署参数都写在根目录的 `vercel.json` 里：
+推上 GitHub 后，在 Vercel 里 Import 这个仓库。**Root Directory 留空（= 仓库根目录）**，其余参数都写在根目录的 `vercel.json` 里：
 
 - 构建命令：`pnpm build:naive`
 - 产物目录：`apps/web-naive/dist`
 - Node 版本：读 `package.json` 的 `engines` 字段
 - `rewrites`：所有路径回退到 `/index.html`
 
-几个容易踩的点：
+> ⚠️ **Root Directory 和构建命令必须配对，这是最容易踩的坑。**
+>
+> `build:naive` 这个脚本只存在于**仓库根目录**的 `package.json`（`apps/web-naive/package.json` 里只有 `build`、`dev`、`preview`、`typecheck`、`build:analyze`）。配错的典型症状就是构建时报 **`Command "build:naive" not found`**。
+>
+> | Root Directory | Build Command | Output Directory | 说明 |
+> | --- | --- | --- | --- |
+> | 留空 = 仓库根目录 | `pnpm build:naive` | `apps/web-naive/dist` | ✅ 推荐，走仓库验证过的 turbo 流程 |
+> | `apps/web-naive` | `pnpm build` | `dist` | ⚠️ 绕开 turbo，也绕开了验证过的流程，不建议 |
+>
+> 另外 Root Directory 一旦设成子目录，Vercel 就读不到根目录的 `vercel.json`，那条 SPA rewrite 和产物目录设置也会一起失效。
 
-1. **Root Directory 保持仓库根目录**，不要设成 `apps/web-naive`。`buildCommand` 里的 `pnpm build:naive` 是根目录 `package.json` 的脚本，它靠 turbo 跑完整条 workspace 依赖链；Root Directory 一旦指到子目录，Vercel 就会改用那个子目录自己的 `build` 脚本，绕开仓库里验证过的流程。另外 `vercel.json` 必须放在 Root Directory 下，放根目录最省事。
-2. **关于这条 `rewrites`**：它的作用是把「找不到对应静态文件的路径」统统交回 `/index.html`，这是 history 路由能工作的前提。本项目当前的生产配置是 `VITE_ROUTER_HISTORY=hash`（见 `apps/web-naive/.env.production`），URL 形如 `/#/demos/parallax`，浏览器压根不会去请求 `/demos/parallax`，所以这条 rewrite 现在用不上；留着是为了哪天改成 history 路由时不用再动 Vercel。
-3. **线上登录依赖哪个 mock 服务**：生产接口地址在 `apps/web-naive/.env.production` 的 `VITE_GLOB_API_URL`，目前指向一个公共的 mock 服务。线上能不能登录，取决于那个服务认不认这份账号数据（账号定义在 `apps/backend-mock/utils/mock-data.ts`）。想自己掌控，就把 `backend-mock` 单独部署一份，再把 `VITE_GLOB_API_URL` 指过去。
-4. **建议关掉打包压缩**：`.env.production` 里的 `VITE_ARCHIVER=true` 会在打包完再压一个 `dist.zip`，Vercel 上用不到，改成 `false` 可以省一次压缩。
-5. **如果报 lockfile 过期**（`frozen-lockfile` 相关错误）：本地跑一次 `pnpm install` 把更新后的 `pnpm-lock.yaml` 一起提交；或者在 Vercel 项目设置里把 Install Command 改成 `pnpm install --no-frozen-lockfile`。
+其余几个容易踩的点：
+
+1. **关于这条 `rewrites`**：它的作用是把「找不到对应静态文件的路径」统统交回 `/index.html`，这是 history 路由能工作的前提。本项目当前的生产配置是 `VITE_ROUTER_HISTORY=hash`（见 `apps/web-naive/.env.production`），URL 形如 `/#/demos/parallax`，浏览器压根不会去请求 `/demos/parallax`，所以这条 rewrite 现在用不上；留着是为了哪天改成 history 路由时不用再动 Vercel。
+2. **线上登录依赖哪个 mock 服务**：生产接口地址在 `apps/web-naive/.env.production` 的 `VITE_GLOB_API_URL`，目前指向一个公共的 mock 服务。线上能不能登录，取决于那个服务认不认这份账号数据（账号定义在 `apps/backend-mock/utils/mock-data.ts`）。想自己掌控，就把 `backend-mock` 单独部署一份，再把 `VITE_GLOB_API_URL` 指过去。
+3. **建议关掉打包压缩**：`.env.production` 里的 `VITE_ARCHIVER=true` 会在打包完再压一个 `dist.zip`，Vercel 上用不到，改成 `false` 可以省一次压缩。
+4. **如果报 lockfile 过期**（`frozen-lockfile` 相关错误）：本地跑一次 `pnpm install` 把更新后的 `pnpm-lock.yaml` 一起提交；或者在 Vercel 项目设置里把 Install Command 改成 `pnpm install --no-frozen-lockfile`。
 
 `apps/backend-mock` 是独立的 Nitro 服务，不包含在这次静态部署里。
 

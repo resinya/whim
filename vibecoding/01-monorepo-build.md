@@ -211,3 +211,59 @@ pnpm exec turbo build --filter=@vben/web-naive --dry=json
 ```
 
 ⚠️ **未能实测**：这篇笔记里的构建结论，来自读配置和源码，我没能在本机真正跑完一次 `pnpm build:naive`（Vite 内部调用系统命令时撞上我这边的沙箱限制，报 `spawn EPERM`）。**「产物在 `apps/web-naive/dist`」是推断，不是亲眼所见**——第 5 节两条命令你本地跑一次就能确认。
+
+---
+
+## 6. 附：`stub` 打桩与 tsdown 的坑
+
+第 2 节第 0 层提到，`pnpm install` 最后会跑 `pnpm -r run --if-present stub`。有 `stub` 脚本的包一共 8 个：
+
+```
+@vben/vite-config      @vben/node-utils       @vben/eslint-config
+@vben/oxfmt-config     @vben/oxlint-config    @vben/turbo-run
+@vben/vsh              @vben-core/shared
+```
+
+### 其中 `@vben/vite-config` 的 stub 不能删
+
+它的 `exports` 是：
+
+```json
+".": { "types": "./src/index.ts", "default": "./dist/index.mjs" }
+```
+
+**运行时只有 `dist/index.mjs` 一个出口**——没有像别的包那样把 `development`/`production` 指向 `src`。而 `apps/web-naive/vite.config.ts` 第一行就是：
+
+```ts
+import { defineConfig } from '@vben/vite-config';
+```
+
+所以**它必须先被打桩，应用才能打包**。这也是「装依赖失败 = 整个部署失败」的原因：`postinstall` 里任何一个 stub 挂了，`pnpm install` 就退出 1，后面什么都跑不了。
+
+> 反例对照：`packages/utils`、`packages/@core/ui-kit/*` 的 `exports` 把 `development` 和 `production` **都指向 `src`**，那些包的打桩产物只服务于 `default` 分支（发布到 npm 的场景），本地开发和应用打包都走源码。
+
+### 踩过的坑：废弃的 `deps.skipNodeModulesBundle`
+
+这些 tsdown 配置里原来都写着：
+
+```ts
+deps: { skipNodeModulesBundle: true }
+```
+
+tsdown 每次都警告：
+
+```
+WARN  `deps.skipNodeModulesBundle` is deprecated. Use `deps.neverBundle: true` instead.
+```
+
+装上更新版 tsdown（如 `0.23.0`）后，这个废弃选项的行为变了：node_modules 里的依赖被卷进打桩产物，撞上某个依赖里 `import esbuild from 'esbuild'` 的 CJS/ESM 互操作，直接报 `Missing export` 让构建失败。
+
+**已全部迁移成 `deps: { neverBundle: true }`**（8 个文件：`internal/vite-config`、`internal/node-utils`、`internal/lint-configs/eslint-config`、`packages/@core/ui-kit/` 下 5 个）。
+
+本地实测结果——迁移后产物**字节数完全一致**，废弃警告消失：
+
+| 包 | 迁移前 | 迁移后 |
+| --- | --- | --- |
+| `@vben/vite-config` | `dist/index.mjs 32.23 kB` | `32.23 kB` ✅ |
+| `@vben/node-utils` | `dist/index.mjs 6.82 kB` | `6.82 kB` ✅ |
+| `@vben/eslint-config` | `dist/index.mjs 24.36 kB` | `24.36 kB` ✅ |

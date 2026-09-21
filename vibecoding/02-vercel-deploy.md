@@ -72,6 +72,29 @@ Root Directory 一个设置同时决定三件事：
 
 📖 **官方文档口径**：Vercel 对 monorepo/workspace 有自动识别，装依赖的层级有它自己的一套推断。所以不要断言「填子目录一定失败」——只是没必要去赌。
 
+### 3.1 配对表（Root Directory 和构建命令是绑在一起的）
+
+`build:naive` 这个脚本**只存在于仓库根目录的 `package.json`**（✅ 读代码确认）。`apps/web-naive/package.json` 里只有 `build`、`dev`、`preview`、`typecheck`、`build:analyze`。
+
+| Root Directory | Build Command | Output Directory | 说明 |
+| --- | --- | --- | --- |
+| 留空 = 仓库根目录 | `pnpm build:naive` | `apps/web-naive/dist` | ✅ 推荐，走仓库验证过的 turbo 流程 |
+| `apps/web-naive` | `pnpm build` | `dist` | ⚠️ 绕开 turbo，也绕开了验证过的流程，不建议 |
+
+**配错的典型症状**：
+
+```
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command "build:naive" not found
+Did you mean "pnpm build"?
+Error: Command "pnpm build:naive" exited with 1
+```
+
+看到这个报错，基本可以直接断定：**构建命令是在一个没有 `build:naive` 的目录里执行的**——也就是 Root Directory 被设成了子目录，而 Build Command 还写着 `pnpm build:naive`。
+
+**怎么判断命令在哪个目录跑的**：pnpm 的日志会给「不在当前目录」的包加相对路径前缀。如果日志里满是 `../.. postinstall:` 这种前缀，说明当前工作目录比 workspace 根目录低两层——正是 `apps/web-naive`。
+
+还有一个连带影响：**Root Directory 设成子目录后，Vercel 读不到根目录的 `vercel.json`**，那条 SPA rewrite 和 `outputDirectory` 会一起失效，全部得手动在面板里填。
+
 ---
 
 ## 4. `--frozen-lockfile` 是什么（第 5 条注意事项）
@@ -83,16 +106,18 @@ Root Directory 一个设置同时决定三件事：
 | `pnpm install` | 按清单装；清单和 `package.json` 对不上时，**顺手把清单更新掉** |
 | `pnpm install --frozen-lockfile`（冻结） | 只按清单装，**一个字都不许改**；发现对不上直接报错罢工 |
 
-Vercel 为了构建可复现**可能会用冻结模式**。此时若你改了 `package.json` / `pnpm-workspace.yaml` 却没提交同步过的 lockfile，构建第一步就挂，报错里带 `OUTDATED_LOCKFILE` 字样。
+Vercel 跑的是**普通的** `pnpm install`（不是冻结模式）。这时如果清单和配置对不上，它会自己重新解析并更新清单——**版本就漂了**。所以推荐主动覆盖这一项：
 
-**两种修法**：
+```
+Vercel → Settings → Build and Deployment → Install Command
+  → 打开 Override 开关 → 填：pnpm install --frozen-lockfile
+```
 
-1. 正统：本地跑一次 `pnpm install`，把更新后的 `pnpm-lock.yaml` 一起提交；
-2. 应急：Vercel 项目设置里把 Install Command 改成 `pnpm install --no-frozen-lockfile`。
+**为什么推荐（真实事故）**：本仓库有一次 Vercel 构建装到了 `tsdown@0.23.0` / `rolldown@1.2.9`，而仓库 catalog 写的是 `^0.22.13`、lockfile 锁的是 `0.22.13`——装出来的版本和仓库声明对不上，结果新版 tsdown 让 `internal/vite-config` 的打桩构建报 `Missing export` 直接失败（原理见 [01 篇第 6 节](./01-monorepo-build.md)）。冻结模式能保证装出来的就是清单里那一套。
 
-⚠️ **这个仓库当前有隐患**：`git status` 显示 `pnpm-lock.yaml` 有未提交的改动（删掉了约 596 行已无人引用的 catalog 条目）。推送前最好确认它和 `pnpm-workspace.yaml` 是一致的。
+**副作用（要接受的）**：一旦 `package.json` / `pnpm-workspace.yaml` 改了而 lockfile 没同步，构建会**立刻失败**并报 `OUTDATED_LOCKFILE`。这是故意设计——**失败得早，比悄悄装错版本强**。修法：本地跑一次 `pnpm install`，把更新后的 lockfile 一起提交。
 
-📖 Vercel 是否默认用冻结模式，我没能拿到确切措辞（Vercel 文档站是 JS 动态渲染的，抓不到正文）。所以上面写成条件句：**无论默认是不是冻结模式，这条建议都成立。**
+> 本仓库的 lockfile 目前是**一致**的：实测 `pnpm install --frozen-lockfile` 返回 `Already up to date`（exit 0），所以开冻结模式不会卡住构建。
 
 ---
 
@@ -130,6 +155,7 @@ Vercel 为了构建可复现**可能会用冻结模式**。此时若你改了 `p
 
 | 现象 | 原因 | 怎么办 |
 | --- | --- | --- |
+| 构建报 `Command "build:naive" not found` | Root Directory 被设成了 `apps/web-naive`，那里没有 `build:naive` 这个脚本（它只在根目录） | Root Directory 改回仓库根目录（推荐）；或保持子目录但把 Build Command 改成 `pnpm build`、产物目录改成 `dist` |
 | 构建第一步挂，报 `OUTDATED_LOCKFILE` / `frozen-lockfile` | 冻结模式 + lockfile 与配置不同步 | 本地 `pnpm install` 后提交 lockfile；或 Install Command 改 `pnpm install --no-frozen-lockfile` |
 | 构建到一半内存不足 / OOM | 打包确实吃内存 | 项目设置里换更大的 Build Machine（免费版规格有限） |
 | 线上能开但登录失败 | 生产接口 `VITE_GLOB_API_URL` 指向的公共 mock 服务，不认 `resin/admin/jack` 这份账号（账号定义在 `apps/backend-mock/utils/mock-data.ts`） | 自己部署一份 `backend-mock`，再把 `VITE_GLOB_API_URL` 指过去 |

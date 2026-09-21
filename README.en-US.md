@@ -104,34 +104,43 @@ The reasoning behind the build setup, the Vercel deployment details and hash-vs-
 
 ## Deploying to Vercel
 
-Push to GitHub, import the repo in Vercel, and you're done — the deployment settings live in `vercel.json` at the
-repo root:
+Push to GitHub, then import the repo in Vercel. **Leave the Root Directory empty (= the repo root)**; everything else
+lives in `vercel.json` at the repo root:
 
 - Build command: `pnpm build:naive`
 - Output directory: `apps/web-naive/dist`
 - Node version: taken from the `engines` field in `package.json`
 - `rewrites`: every path falls back to `/index.html`
 
-Things that are easy to get wrong:
+> ⚠️ **The Root Directory and the build command have to match — this is the easiest thing to get wrong.**
+>
+> The `build:naive` script only exists in the **root** `package.json` (`apps/web-naive/package.json` has just `build`,
+> `dev`, `preview`, `typecheck` and `build:analyze`). Get the pairing wrong and the build fails with
+> **`Command "build:naive" not found`**.
+>
+> | Root Directory | Build Command | Output Directory | Notes |
+> | --- | --- | --- | --- |
+> | empty = repo root | `pnpm build:naive` | `apps/web-naive/dist` | ✅ Recommended; uses the turbo path this repo is verified on |
+> | `apps/web-naive` | `pnpm build` | `dist` | ⚠️ Skips turbo and the verified path; not recommended |
+>
+> Also note that once the Root Directory points at a sub-directory, Vercel can no longer see the root `vercel.json`,
+> so the SPA rewrite and the output-directory setting stop applying too.
 
-1. **Keep the Root Directory at the repo root** — don't set it to `apps/web-naive`. The `buildCommand`
-   (`pnpm build:naive`) is a script from the root `package.json` that relies on turbo to walk the whole workspace
-   dependency chain. Point the Root Directory at the sub-directory and Vercel will instead use that sub-directory's
-   own `build` script, bypassing the path this repo is verified on. `vercel.json` also has to live under the Root
-   Directory, so keeping it at the root is the least fiddly option.
-2. **About that `rewrites` entry:** it sends any path that doesn't match a static file back to `/index.html`, which
+Other things that are easy to get wrong:
+
+1. **About that `rewrites` entry:** it sends any path that doesn't match a static file back to `/index.html`, which
    is what makes history routing work. Production currently uses `VITE_ROUTER_HISTORY=hash` (see
    `apps/web-naive/.env.production`), so URLs look like `/#/demos/parallax` and the browser never asks the server
    for `/demos/parallax` at all — the rewrite is unused today. It's there so that switching to history routing later
    needs no Vercel-side change.
-3. **Which mock service login depends on:** the production API URL is `VITE_GLOB_API_URL` in
+2. **Which mock service login depends on:** the production API URL is `VITE_GLOB_API_URL` in
    `apps/web-naive/.env.production`, currently pointing at a public mock service. Whether login works online depends
    on whether that service knows this account data (the accounts are defined in
    `apps/backend-mock/utils/mock-data.ts`). If you want full control, deploy `backend-mock` yourself and point
    `VITE_GLOB_API_URL` at it.
-4. **Consider turning the archive step off:** `VITE_ARCHIVER=true` in `.env.production` zips the build output into a
+3. **Consider turning the archive step off:** `VITE_ARCHIVER=true` in `.env.production` zips the build output into a
    `dist.zip` after every build. Vercel has no use for it — setting it to `false` saves a compression pass.
-5. **If you hit a stale-lockfile error:** run `pnpm install` locally and commit the updated `pnpm-lock.yaml`, or set
+4. **If you hit a stale-lockfile error:** run `pnpm install` locally and commit the updated `pnpm-lock.yaml`, or set
    the project's Install Command to `pnpm install --no-frozen-lockfile` in the Vercel dashboard.
 
 `apps/backend-mock` is a standalone Nitro service and is not part of this static deployment.
